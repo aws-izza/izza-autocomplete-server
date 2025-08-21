@@ -139,25 +139,16 @@ spec:
 apiVersion: v1
 kind: Pod
 spec:
+  serviceAccountName: jenkins-kaniko-sa  # ServiceAccount 지정
   containers:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:debug
     command:
     - /busybox/cat
     tty: true
-    volumeMounts:
-    - name: kaniko-secret
-      mountPath: /kaniko/.docker
     env:
     - name: AWS_REGION
       value: ${AWS_REGION}
-  volumes:
-  - name: kaniko-secret
-    secret:
-      secretName: kaniko-docker-config
-      items:
-      - key: .dockerconfigjson
-        path: config.json
 """
                 }
             }
@@ -170,14 +161,13 @@ spec:
                     unstash 'dockerfile'
                     
                     script {
-                        container('kaniko') {
-                            sh '''
-                                /kaniko/executor \\
-                                    --dockerfile=Dockerfile \\
-                                    --context=. \\
-                                    --destination=177716289679.dkr.ecr.ap-northeast-2.amazonaws.com/izza-autocomplete-server:${BUILD_NUMBER}
-                            '''
-                        }
+                        sh '''
+                            /kaniko/executor \\
+                                --dockerfile=Dockerfile \\
+                                --context=. \\
+                                --destination=177716289679.dkr.ecr.ap-northeast-2.amazonaws.com/izza/autocomplete-server:${BUILD_NUMBER} \\
+                                --cache=true
+                        '''
                     }
                 }
             }
