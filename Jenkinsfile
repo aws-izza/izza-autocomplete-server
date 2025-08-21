@@ -19,10 +19,6 @@ pipeline {
         GIT_CREDENTIALS = 'github-pat'
     }
     
-    tools {
-        go '1.24'  // Jenkins에 Go 1.24 설치 필요
-    }
-    
     stages {
         stage('Checkout') {
             steps {
@@ -31,154 +27,248 @@ pipeline {
             }
         }
         
-        stage('Go Version & Dependencies') {
-            steps {
-                echo "🐹 Setting up Go environment..."
-                sh '''
-                    go version
-                    go mod download
-                    go mod verify
-                '''
+        stage('Go Build & Test') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: golang
+    image: golang:1.24-alpine
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - name: workspace
+      mountPath: /workspace
+  volumes:
+  - name: workspace
+    emptyDir: {}
+"""
+                }
             }
-        }
-        
-        stage('Test') {
             steps {
-                echo "🧪 Running tests..."
-                sh '''
-                    # 단위 테스트 실행
-                    go test -v ./...
+                container('golang') {
+                    echo "🐹 Setting up Go environment..."
+                    sh '''
+                        go version
+                        go mod download
+                        go mod verify
+                    '''
                     
-                    # 코드 품질 검사
-                    go vet ./...
+                    echo "🧪 Running tests..."
+                    sh '''
+                        # 단위 테스트 실행
+                        go test -v ./...
+                        
+                        # 코드 품질 검사
+                        go vet ./...
+                    '''
                     
-                    # 정적 분석 (golint 설치되어 있다면)
-                    # golint ./...
-                '''
+                    echo "🏗️ Building Go application..."
+                    sh '''
+                        # 정적 링크된 바이너리 빌드
+                        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o main .
+                        
+                        # 빌드된 바이너리 확인
+                        ls -la main
+                    '''
+                    
+                    // 빌드된 바이너리를 다음 스테이지로 전달
+                    stash includes: 'main', name: 'go-binary'
+                    stash includes: 'Dockerfile', name: 'dockerfile'
+                }
             }
             post {
                 always {
-                    // 테스트 결과가 있다면 게시
-                    publishTestResults testResultsPattern: '**/test-results.xml'
-                }
-            }
-        }
-        
-        stage('Build') {
-            steps {
-                echo "🏗️ Building Go application..."
-                sh '''
-                    # 정적 링크된 바이너리 빌드
-                    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o main .
-                    
-                    # 빌드된 바이너리 확인
-                    ls -la main
-                    file main
-                '''
-            }
-        }
-        
-        stage('Security Scan') {
-            steps {
-                echo "🔒 Running security scans..."
-                script {
-                    try {
-                        sh '''
-                            # Go 모듈 취약점 스캔 (govulncheck 설치되어 있다면)
-                            # govulncheck ./...
-                            
-                            # 의존성 라이선스 체크 (필요시)
-                            # go-licenses check ./...
-                            
-                            echo "Security scan completed"
-                        '''
-                    } catch (Exception e) {
-                        echo "⚠️ Security scan failed, but continuing: ${e.getMessage()}"
+                    script {
+                        try {
+                            if (fileExists('**/test-results.xml')) {
+                                publishTestResults testResultsPattern: '**/test-results.xml'
+                            }
+                        } catch (Exception e) {
+                            echo "No test results to publish: ${e.getMessage()}"
+                        }
                     }
                 }
             }
         }
         
-        stage('Docker Build') {
+        stage('Security Scan') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: golang
+    image: golang:1.24-alpine
+    command:
+    - cat
+    tty: true
+"""
+                }
+            }
             steps {
-                echo "🐳 Building Docker image..."
-                script {
-                    def image = docker.build("${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}")
-                    
-                    // 추가로 latest 태그도 생성
-                    sh "docker tag ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG} ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:latest"
+                container('golang') {
+                    echo "🔒 Running security scans..."
+                    script {
+                        try {
+                            sh '''
+                                # Go 모듈 취약점 스캔 (선택사항)
+                                # go install golang.org/x/vuln/cmd/govulncheck@latest
+                                # govulncheck ./...
+                                
+                                echo "Security scan completed"
+                            '''
+                        } catch (Exception e) {
+                            echo "⚠️ Security scan failed, but continuing: ${e.getMessage()}"
+                        }
+                    }
                 }
             }
         }
         
-        stage('ECR Push') {
+        stage('Build & Push with Kaniko') {
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    command:
+    - /busybox/cat
+    tty: true
+    volumeMounts:
+    - name: kaniko-secret
+      mountPath: /kaniko/.docker
+    env:
+    - name: AWS_REGION
+      value: ${AWS_REGION}
+  volumes:
+  - name: kaniko-secret
+    secret:
+      secretName: kaniko-docker-config
+      items:
+      - key: .dockerconfigjson
+        path: config.json
+"""
+                }
+            }
             steps {
-                echo "📤 Pushing to ECR..."
-                script {
-                    // AWS ECR 로그인
-                    sh '''
-                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                    '''
+                container('kaniko') {
+                    echo "🐳 Building and pushing with Kaniko..."
                     
-                    // 이미지 푸시
-                    sh '''
-                        docker push ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}
-                        docker push ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:latest
-                    '''
+                    // 이전 스테이지에서 빌드한 바이너리 가져오기
+                    unstash 'go-binary'
+                    unstash 'dockerfile'
+                    
+                    script {
+                        withAWS(credentials: "${AWS_CREDENTIALS}", region: "${AWS_REGION}") {
+                            // ECR 로그인을 위한 Docker config 생성
+                            sh '''
+                                # AWS ECR 자격 증명 가져오기
+                                aws ecr get-login-password --region ${AWS_REGION} > /tmp/ecr_token
+                                
+                                # Docker config.json 생성
+                                echo "{\\"auths\\": {\\"${ECR_REGISTRY}\\": {\\"username\\": \\"AWS\\", \\"password\\": \\"$(cat /tmp/ecr_token)\\"}}}" > /kaniko/.docker/config.json
+                                
+                                # 디버깅을 위한 확인
+                                ls -la /kaniko/.docker/
+                            '''
+                            
+                            // Kaniko로 이미지 빌드 및 푸시
+                            sh """
+                                /kaniko/executor \\
+                                --dockerfile=Dockerfile \\
+                                --context=. \\
+                                --destination=${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG} \\
+                                --destination=${ECR_REGISTRY}/${IMAGE_REPOSITORY}:latest \\
+                                --cache=true \\
+                                --cache-ttl=24h
+                            """
+                        }
+                    }
                 }
             }
         }
         
         stage('Update GitOps Repository') {
-            steps {
-                echo "🔄 Updating GitOps repository..."
-                script {
-                    withCredentials([usernamePassword(credentialsId: "${GIT_CREDENTIALS}", usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
-                        sh '''
-                            # GitOps 레포지토리 클론
-                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/your-org/izza-cd.git gitops-repo
-                            cd gitops-repo
-                            
-                            # Git 설정
-                            git config user.name "Jenkins"
-                            git config user.email "jenkins@company.com"
-                            
-                            # 이미지 태그 업데이트
-                            sed -i "s|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:.*|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}|g" environments/autocomplete-server/app.yaml
-                            
-                            # 변경사항 확인
-                            git diff
-                            
-                            # 커밋 및 푸시
-                            git add environments/autocomplete-server/app.yaml
-                            git commit -m "🚀 Update autocomplete-server image to ${IMAGE_TAG}
-                            
-                            - Build: #${BUILD_NUMBER}
-                            - Commit: ${GIT_COMMIT}
-                            - Branch: ${GIT_BRANCH}
-                            - Triggered by: ${BUILD_USER:-Jenkins}"
-                            
-                            git push origin ${GITOPS_BRANCH}
-                            
-                            echo "✅ GitOps repository updated successfully"
-                        '''
-                    }
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: git
+    image: alpine/git:latest
+    command:
+    - cat
+    tty: true
+"""
                 }
             }
-        }
-        
-        stage('Cleanup') {
             steps {
-                echo "🧹 Cleaning up..."
-                sh '''
-                    # 로컬 Docker 이미지 정리
-                    docker rmi ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG} || true
-                    docker rmi ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:latest || true
-                    
-                    # 빌드 아티팩트 정리
-                    rm -f main
-                    rm -rf gitops-repo
-                '''
+                container('git') {
+                    echo "🔄 Updating GitOps repository..."
+                    script {
+                        withCredentials([usernamePassword(credentialsId: "${GIT_CREDENTIALS}", usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                            sh '''
+                                # 필요한 도구 설치
+                                apk add --no-cache sed
+                                
+                                # 기존 gitops-repo 디렉토리 제거 (있을 경우)
+                                rm -rf gitops-repo
+                                
+                                # GitOps 레포지토리 클론
+                                git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/aws-izza/izza-cd.git gitops-repo
+                                cd gitops-repo
+                                
+                                # Git 설정
+                                git config user.name "Jenkins CI"
+                                git config user.email "jenkins@company.com"
+                                
+                                # 현재 이미지 태그 확인
+                                echo "Current image in GitOps repo:"
+                                grep "image: " environments/autocomplete-server/app.yaml || echo "No image line found"
+                                
+                                # 이미지 태그 업데이트
+                                sed -i "s|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:.*|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}|g" environments/autocomplete-server/app.yaml
+                                
+                                # 변경사항 확인
+                                echo "Updated image in GitOps repo:"
+                                grep "image: " environments/autocomplete-server/app.yaml
+                                
+                                echo "Git diff:"
+                                git diff
+                                
+                                # 변경사항이 있는 경우에만 커밋
+                                if [ -n "$(git diff --name-only)" ]; then
+                                    # 커밋 및 푸시
+                                    git add environments/autocomplete-server/app.yaml
+                                    git commit -m "🚀 Update autocomplete-server image to ${IMAGE_TAG}
+
+- Build: #${BUILD_NUMBER}
+- Commit: ${GIT_COMMIT}
+- Branch: ${GIT_BRANCH}
+- Triggered by: ${BUILD_USER:-Jenkins}"
+                                    
+                                    git push origin ${GITOPS_BRANCH}
+                                    echo "✅ GitOps repository updated successfully"
+                                else
+                                    echo "ℹ️ No changes to commit"
+                                fi
+                            '''
+                        }
+                    }
+                }
             }
         }
     }
@@ -193,10 +283,13 @@ pipeline {
         
         success {
             echo "✅ Pipeline succeeded!"
+            echo "🏷️ Built and pushed image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+            echo "📦 Image also tagged as: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:latest"
         }
         
         failure {
             echo "❌ Pipeline failed!"
+            echo "💡 Check the logs above for details"
         }
         
         unstable {
