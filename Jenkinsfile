@@ -170,23 +170,13 @@ spec:
                     unstash 'dockerfile'
                     
                     script {
-                        withAWS(credentials: "${AWS_CREDENTIALS}", region: "${AWS_REGION}") {
-                            // ECR 로그인을 위한 Docker config 생성
-                            sh """
-                                aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
-                                docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                            """
-                            
-                            // Kaniko로 이미지 빌드 및 푸시
-                            sh """
+                        container('kaniko') {
+                            sh '''
                                 /kaniko/executor \\
-                                --dockerfile=Dockerfile \\
-                                --context=. \\
-                                --destination=${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG} \\
-                                --destination=${ECR_REGISTRY}/${IMAGE_REPOSITORY}:latest \\
-                                --cache=true \\
-                                --cache-ttl=24h
-                            """
+                                    --dockerfile=Dockerfile \\
+                                    --context=. \\
+                                    --destination=177716289679.dkr.ecr.ap-northeast-2.amazonaws.com/izza-autocomplete-server:${BUILD_NUMBER}
+                            '''
                         }
                     }
                 }
