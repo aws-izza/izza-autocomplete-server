@@ -172,16 +172,10 @@ spec:
                     script {
                         withAWS(credentials: "${AWS_CREDENTIALS}", region: "${AWS_REGION}") {
                             // ECR 로그인을 위한 Docker config 생성
-                            sh '''
-                                # AWS ECR 자격 증명 가져오기
-                                aws ecr get-login-password --region ${AWS_REGION} > /tmp/ecr_token
-                                
-                                # Docker config.json 생성
-                                echo "{\\"auths\\": {\\"${ECR_REGISTRY}\\": {\\"username\\": \\"AWS\\", \\"password\\": \\"$(cat /tmp/ecr_token)\\"}}}" > /kaniko/.docker/config.json
-                                
-                                # 디버깅을 위한 확인
-                                ls -la /kaniko/.docker/
-                            '''
+                            sh """
+                                aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
+                                docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                            """
                             
                             // Kaniko로 이미지 빌드 및 푸시
                             sh """
@@ -276,9 +270,6 @@ spec:
     post {
         always {
             echo "🏁 Pipeline completed"
-            
-            // 워크스페이스 정리
-            cleanWs()
         }
         
         success {
