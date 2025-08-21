@@ -211,14 +211,14 @@ spec:
                                 
                                 # 현재 이미지 태그 확인
                                 echo "Current image in GitOps repo:"
-                                grep "image: " environments/autocomplete-server/app.yaml || echo "No image line found"
+                                grep "image: " environments/autocomplete-server/autocomplete-server.yaml || echo "No image line found"
                                 
                                 # 이미지 태그 업데이트
-                                sed -i "s|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:.*|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}|g" environments/autocomplete-server/app.yaml
+                                sed -i "s|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:.*|image: ${ECR_REGISTRY}/${IMAGE_REPOSITORY}:${IMAGE_TAG}|g" environments/autocomplete-server/autocomplete-server.yaml
                                 
                                 # 변경사항 확인
                                 echo "Updated image in GitOps repo:"
-                                grep "image: " environments/autocomplete-server/app.yaml
+                                grep "image: " environments/autocomplete-server/autocomplete-server.yaml
                                 
                                 echo "Git diff:"
                                 git diff
@@ -226,7 +226,7 @@ spec:
                                 # 변경사항이 있는 경우에만 커밋
                                 if [ -n "$(git diff --name-only)" ]; then
                                     # 커밋 및 푸시
-                                    git add environments/autocomplete-server/app.yaml
+                                    git add environments/autocomplete-server/autocomplete-server.yaml
                                     git commit -m "Update autocomplete-server image to ${IMAGE_TAG}
 
 - Build: #${BUILD_NUMBER}
