@@ -206,7 +206,7 @@ spec:
                                 cd gitops-repo
                                 
                                 # Git 설정
-                                git config user.name "Jenkins CI"
+                                git config user.name "Jenkins"
                                 git config user.email "jenkins@company.com"
                                 
                                 # 현재 이미지 태그 확인
@@ -227,7 +227,7 @@ spec:
                                 if [ -n "$(git diff --name-only)" ]; then
                                     # 커밋 및 푸시
                                     git add environments/autocomplete-server/app.yaml
-                                    git commit -m "🚀 Update autocomplete-server image to ${IMAGE_TAG}
+                                    git commit -m "Update autocomplete-server image to ${IMAGE_TAG}
 
 - Build: #${BUILD_NUMBER}
 - Commit: ${GIT_COMMIT}
