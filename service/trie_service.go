@@ -32,6 +32,33 @@ func createNodes() *trie.NodeManager {
 	return &nodes
 }
 
+func (ts *TrieService) InitializeFromS3(batchSize int) error {
+	// Reset nodes
+	nodes := trie.CreateNodes()
+	ts.nodeManager = &nodes
+
+	// 배치 처리 함수 정의
+	processor := func(addresses []string) error {
+		for _, address := range addresses {
+			ts.nodeManager.Insert(address)
+		}
+		return nil
+	}
+
+	// S3에서 배치로 주소 로드 및 처리
+	if err := database.LoadLandAddressesFromS3Batch(batchSize, processor); err != nil {
+		return fmt.Errorf("failed to load addresses from S3 in batches: %w", err)
+	}
+
+	log.Println("Successfully completed loading all addresses from S3 into trie")
+
+	// Trie 상태 출력
+	ts.printTrieStatus()
+
+	return nil
+}
+
+// InitializeFromDatabase - 기존 DB 방식 (호환성을 위해 유지)
 func (ts *TrieService) InitializeFromDatabase(dbConfig database.Config, batchSize int) error {
 	db, err := database.Connect(dbConfig)
 	if err != nil {
