@@ -15,12 +15,22 @@ func CreateNodes() NodeManager {
 }
 
 func (nodes *NodeManager) Insert(address string) {
+	// 안전장치: 빈 문자열 체크
+	if len(address) == 0 {
+		return
+	}
+	
 	split := strings.Split(address, " ")
 
 	maxDepth := -1
 	for i, splitAddress := range split {
+		// 안전장치: 빈 부분 문자열 체크
+		if len(splitAddress) == 0 {
+			continue
+		}
+		
 		runes := []rune(splitAddress)
-		if !unicode.IsDigit(runes[0]) {
+		if len(runes) > 0 && !unicode.IsDigit(runes[0]) {
 			maxDepth = i
 		}
 	}
