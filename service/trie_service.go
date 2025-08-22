@@ -39,7 +39,19 @@ func (ts *TrieService) InitializeFromS3(batchSize int) error {
 
 	// 배치 처리 함수 정의
 	processor := func(addresses []string) error {
-		for _, address := range addresses {
+		for i, address := range addresses {
+			// 안전장치: 빈 문자열 체크
+			if len(address) == 0 {
+				log.Printf("ERROR: Empty address found in batch at index %d", i)
+				continue
+			}
+			
+			// 디버그: 문제가 될 수 있는 주소 로깅
+			if len(address) < 2 {
+				log.Printf("DEBUG: Very short address in batch[%d]: %q (length: %d)", i, address, len(address))
+				continue
+			}
+			
 			ts.nodeManager.Insert(address)
 		}
 		return nil

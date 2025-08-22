@@ -227,11 +227,20 @@ func processTextFile(filename string, batchSize int, batch *[]string, processor 
 	fileProcessed := 0
 
 	for scanner.Scan() {
-		address := strings.TrimSpace(scanner.Text())
+		rawLine := scanner.Text()
+		address := strings.TrimSpace(rawLine)
 		
-		// 빈 줄이나 무효한 주소 스킵
-		if address == "" || len(address) < 2 {
+		// 디버그 로그: 문제가 될 수 있는 라인들 출력
+		if len(address) < 2 {
+			log.Printf("DEBUG: Skipping short/empty line in file %s - Raw: %q, Trimmed: %q, Length: %d", 
+				filepath.Base(filename), rawLine, address, len(address))
 			continue
+		}
+		
+		// 특수문자나 제어문자 확인
+		if len(address) != len(strings.TrimSpace(strings.ReplaceAll(address, " ", ""))) {
+			log.Printf("DEBUG: Potential special characters in file %s - Address: %q, Length: %d", 
+				filepath.Base(filename), address, len(address))
 		}
 
 		*batch = append(*batch, address)
