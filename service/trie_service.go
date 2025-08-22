@@ -45,13 +45,12 @@ func (ts *TrieService) InitializeFromS3(batchSize int) error {
 				log.Printf("ERROR: Empty address found in batch at index %d", i)
 				continue
 			}
-			
+
 			// 디버그: 문제가 될 수 있는 주소 로깅
 			if len(address) < 2 {
-				log.Printf("DEBUG: Very short address in batch[%d]: %q (length: %d)", i, address, len(address))
 				continue
 			}
-			
+
 			ts.nodeManager.Insert(address)
 		}
 		return nil

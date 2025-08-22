@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	S3Bucket   = "izza-test-data"
-	S3Key      = "land-address/extracted_addresses.zip"
-	S3Region   = "ap-northeast-2"
-	TempDir    = "/tmp/land-addresses"
-	ZipFile    = "/tmp/land-addresses.zip"
+	S3Bucket = "izza-test-data"
+	S3Key    = "land-address/extracted_addresses.zip"
+	S3Region = "ap-northeast-2"
+	TempDir  = "/tmp/land-addresses"
+	ZipFile  = "/tmp/land-addresses.zip"
 )
 
 func LoadLandAddressesFromS3Batch(batchSize int, processor func([]string) error) error {
@@ -229,18 +229,14 @@ func processTextFile(filename string, batchSize int, batch *[]string, processor 
 	for scanner.Scan() {
 		rawLine := scanner.Text()
 		address := strings.TrimSpace(rawLine)
-		
+
 		// 디버그 로그: 문제가 될 수 있는 라인들 출력
 		if len(address) < 2 {
-			log.Printf("DEBUG: Skipping short/empty line in file %s - Raw: %q, Trimmed: %q, Length: %d", 
-				filepath.Base(filename), rawLine, address, len(address))
 			continue
 		}
-		
+
 		// 특수문자나 제어문자 확인
 		if len(address) != len(strings.TrimSpace(strings.ReplaceAll(address, " ", ""))) {
-			log.Printf("DEBUG: Potential special characters in file %s - Address: %q, Length: %d", 
-				filepath.Base(filename), address, len(address))
 		}
 
 		*batch = append(*batch, address)
@@ -253,7 +249,7 @@ func processTextFile(filename string, batchSize int, batch *[]string, processor 
 			}
 
 			*totalProcessed += len(*batch)
-			log.Printf("Processed batch: %d addresses (file: %s, file total: %d, overall total: %d)", 
+			log.Printf("Processed batch: %d addresses (file: %s, file total: %d, overall total: %d)",
 				len(*batch), filepath.Base(filename), fileProcessed, *totalProcessed)
 
 			// 배치 초기화
