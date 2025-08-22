@@ -48,7 +48,7 @@ func (node *FullNode) searchInternal(results *[]string, word []rune, depth int, 
 		result += string(node.Value)
 	}
 
-	if depth < len(word)-1 {
+	if depth <= len(word)-1 {
 		for _, child := range node.Children {
 			if child.Value == word[depth] {
 				child.searchInternal(results, word, depth+1, result)

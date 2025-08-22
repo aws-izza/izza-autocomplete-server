@@ -54,7 +54,6 @@ func (node *JumpNode) Search(results *[]string, word string) {
 		runeWord := []rune(word)
 
 		refNode.searchInMiddle(results, runeWord)
-
 		if len(*results) >= 5 {
 			break
 		}
